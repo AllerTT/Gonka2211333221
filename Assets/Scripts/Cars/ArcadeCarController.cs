@@ -1,138 +1,143 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
-public class ArcadeCarController : MonoBehaviour
+public class PureArcadeCarController : MonoBehaviour
 {
-    [Header("Ground Check")]
-    public Transform groundCheck;
-    public float maxRayLength = 0.8f;
+    [Header("Физика")]
+    public float mass = 1200f;
+    public float acceleration = 25f;
+    public float maxForwardSpeed = 35f;
+    public float maxReverseSpeed = 20f;
+    public float turnSpeed = 80f;
+    public float driftSideways = 6f;
+    public float autoAlignSpeed = 1.5f;
+    public float groundFriction = 0.98f; // <1 = замедление
 
-    [Header("Движение")]
-    public float ускорение = 25f;
-    public float максимальнаяСкоростьВперёд = 35f;
-    public float максимальнаяСкоростьНазад = 20f;
-    public float замедлениеНакатом = 2f;
+    [Header("Визуал колёс")]
 
-    [Header("Поворот")]
-    public float скоростьПоворота = 80f;
-    public float скоростьВыравнивания = 1.5f;
+    public Transform[] frontWheels;
 
-    [Header("Дрифт")]
-    public bool включитьДрифт = true;
-    public float силаSideways = 6f;
-    public float угловаяЗатуханиеВДрифте = 0.5f;
-
-    [Header("Визуальные колёса")]
-    public Transform[] передниеКолёса;
-    public float уголПоворотаРуля = 30f;
-    public float скоростьПоворотаРуля = 8f;
-
-    [Header("Кривые (опционально)")]
-    public AnimationCurve turnCurve = AnimationCurve.Linear(0, 1, 1, 0.5f); // слабее на скорости
-    public AnimationCurve driftCurve = AnimationCurve.Linear(0, 1, 1, 0.3f); // затухание в дрифте
+    public Transform[] rearWheels;
 
     private Rigidbody rb;
-    private float inputHorizontal;
-    private float inputVertical;
-    private bool isDrifting;
-    private bool grounded;
 
-    void Start()
+    void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        rb.mass = mass;
         rb.linearDamping = 0f;
         rb.angularDamping = 0.1f;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
     }
 
     void Update()
     {
-        inputHorizontal = Input.GetAxis("Horizontal");
-        inputVertical = Input.GetAxis("Vertical");
-        isDrifting = включитьДрифт && Input.GetKey(KeyCode.LeftShift);
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        bool drifting = Input.GetKey(KeyCode.LeftShift);
+
+        UpdateWheelVisuals(h, v);
     }
 
     void FixedUpdate()
     {
-        // Проверка контакта с землёй
-        grounded = Physics.Raycast(groundCheck.position, -transform.up, out RaycastHit hit, maxRayLength);
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        bool drifting = Input.GetKey(KeyCode.LeftShift);
 
-        // Локальная скорость
-        Vector3 localVel = transform.InverseTransformDirection(rb.linearVelocity);
+        // Сохраняем текущую скорость
+        Vector3 worldVelocity = rb.linearVelocity;
+        Vector3 localVel = transform.InverseTransformDirection(worldVelocity);
         float forwardSpeed = localVel.z;
-        float speed = rb.linearVelocity.magnitude;
+        float speed = worldVelocity.magnitude;
 
         // Ограничение скорости
-        if (forwardSpeed > максимальнаяСкоростьВперёд)
+        if (forwardSpeed > maxForwardSpeed)
         {
-            localVel.z = максимальнаяСкоростьВперёд;
+            localVel.z = maxForwardSpeed;
             rb.linearVelocity = transform.TransformDirection(localVel);
         }
-        else if (forwardSpeed < -максимальнаяСкоростьНазад)
+        else if (forwardSpeed < -maxReverseSpeed)
         {
-            localVel.z = -максимальнаяСкоростьНазад;
+            localVel.z = -maxReverseSpeed;
             rb.linearVelocity = transform.TransformDirection(localVel);
         }
 
-        // Ускорение (только на земле)
-        if (grounded)
-        {
-            float effectiveAcceleration = ускорение * (inputVertical > 0 ? 1f : 0.5f);
-            rb.AddForceAtPosition(transform.forward * inputVertical * effectiveAcceleration, groundCheck.position, ForceMode.Acceleration);
-        }
+        // Ускорение
+        rb.AddForce(transform.forward * v * acceleration, ForceMode.Acceleration);
 
-        // Поворот и выравнивание
-        if (grounded && speed > 1f)
+        // Поворот
+        if (speed > 1f)
         {
-            float turnMultiplier = turnCurve.Evaluate(speed / максимальнаяСкоростьВперёд);
-            float turnInput = inputHorizontal * скоростьПоворота * turnMultiplier;
-
-            if (Mathf.Abs(inputHorizontal) > 0.1f)
+            if (Mathf.Abs(h) > 0.1f)
             {
-                // Активный поворот
                 float currentAngle = transform.eulerAngles.y;
-                float newAngle = currentAngle + turnInput * Time.fixedDeltaTime;
+                float newAngle = currentAngle + h * turnSpeed * Time.fixedDeltaTime;
                 rb.MoveRotation(Quaternion.Euler(0, newAngle, 0));
             }
             else if (forwardSpeed > 0f)
             {
-                // Автовыравнивание (только вперёд)
-                float targetAngle = Mathf.Atan2(rb.linearVelocity.x, rb.linearVelocity.z) * Mathf.Rad2Deg;
+                float targetAngle = Mathf.Atan2(worldVelocity.x, worldVelocity.z) * Mathf.Rad2Deg;
                 float currentAngle = transform.eulerAngles.y;
-                float smoothedAngle = Mathf.LerpAngle(currentAngle, targetAngle, скоростьВыравнивания * Time.fixedDeltaTime);
-                rb.MoveRotation(Quaternion.Euler(0, smoothedAngle, 0));
+                float smoothed = Mathf.LerpAngle(currentAngle, targetAngle, autoAlignSpeed * Time.fixedDeltaTime);
+                rb.MoveRotation(Quaternion.Euler(0, smoothed, 0));
             }
-            Debug.Log($"Input V: {inputVertical}, Speed: {rb.linearVelocity.magnitude:F1}, Grounded: {grounded}");
         }
 
         // Дрифт
-        if (grounded && isDrifting && inputVertical != 0)
+        if (drifting && v != 0)
         {
-            rb.AddForceAtPosition(transform.right * inputHorizontal * силаSideways, groundCheck.position, ForceMode.Acceleration);
-            rb.angularDamping = угловаяЗатуханиеВДрифте * driftCurve.Evaluate(Mathf.Abs(localVel.x) / 20f);
+            rb.AddForce(transform.right * h * driftSideways, ForceMode.Acceleration);
+            rb.angularDamping = 0.5f;
         }
         else
         {
             rb.angularDamping = 0.1f;
         }
 
-        // Накат
-        rb.linearDamping = (Mathf.Abs(inputVertical) < 0.1f) ? замедлениеНакатом : 0f;
+        // Заменяем `rb.velocity *= friction` на `drag`
+        if (Mathf.Abs(v) < 0.1f)
+        {
+            rb.linearDamping = 2f; // накат
+        }
+        else
+        {
+            rb.linearDamping = (1f - groundFriction) * 10f; // имитация трения
+        }
     }
 
-    void LateUpdate()
+   void UpdateWheelVisuals(float h, float v)
     {
-        // Визуальный поворот руля
-        foreach (var wheel in передниеКолёса)
+        float speed = rb.linearVelocity.magnitude;
+        float rotationFront = -speed * 120f * Time.deltaTime;
+        float rotationRear = rotationFront * 1.2f; // задние быстрее
+
+        // Вращаем передние колёса
+        foreach (var wheel in frontWheels)
         {
-            float targetAngle = inputHorizontal * уголПоворотаРуля;
-            wheel.localRotation = Quaternion.Slerp(
-                wheel.localRotation,
-                Quaternion.Euler(0, targetAngle, 0),
-                скоростьПоворотаРуля * Time.deltaTime
-            );
+            if (wheel != null)
+                wheel.Rotate(Vector3.right, rotationFront);
         }
 
-        // Визуальное вращение всех колёс (если нужно)
-        // Можно добавить отдельный скрипт, как в SkidMarks.cs
+        // Вращаем задние колёса
+        foreach (var wheel in rearWheels)
+        {
+            if (wheel != null)
+                wheel.Rotate(Vector3.right, rotationRear);
+        }
+
+        // Поворот рулевых колёс (только визуал)
+        foreach (var wheel in frontWheels)
+        {
+            if (wheel != null)
+            {
+                float targetAngle = h * 30f;
+                wheel.localRotation = Quaternion.Slerp(
+                    wheel.localRotation,
+                    Quaternion.Euler(0, targetAngle, 0),
+                    8f * Time.deltaTime
+                );
+            }
+        }
     }
 }
