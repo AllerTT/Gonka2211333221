@@ -41,13 +41,27 @@ public class CarController : MonoBehaviour
     
     [Tooltip("Сила ручного тормоза (Пробел)")]
     public float СилаРучногоТормоза = 3000f;
+
+    [Header("◉ ПОДВЕСКА")]
+    [Tooltip("Ход подвески в метрах (расстояние от колеса до кузова)")]
+    [Range(0.1f, 0.5f)]
+    public float ХодПодвески = 0.3f;
     
-    [Tooltip("При какой скорости включается задний ход")]
-    public float ПорогЗаднегоХода = 1.5f;
+    [Tooltip("Жёсткость пружины подвески (чем выше, тем жёстче)")]
+    [Range(10000f, 80000f)]
+    public float ЖёсткостьПружины = 35000f;
     
-    [Tooltip("Плавность переключения между вперёд/назад")]
-    [Range(0.1f, 5f)]
-    public float ПлавностьПереключения = 2f;
+    [Tooltip("Сила демпфирования (поглощение ударов, чем выше — меньше отскоков)")]
+    [Range(1000f, 10000f)]
+    public float СилаДемпфирования = 4500f;
+    
+    [Tooltip("Целевая позиция пружины (0 = полностью сжата, 1 = полностью разжата)")]
+    [Range(0f, 1f)]
+    public float ЦелеваяПозицияПружины = 0.5f;
+    
+    // [Tooltip("Высота кузова над землёй (в метрах)")]
+    // [Range(-0.3f, 0.3f)]
+    // public float ВысотаКузова = -0.1f;  // ← ЗАКОММЕНТИРОВАНО
 
     [Header("◉ СЦЕПЛЕНИЕ С ДОРОГОЙ")]
     [Tooltip("Сцепление при разгоне и торможении")]
@@ -78,18 +92,24 @@ public class CarController : MonoBehaviour
     [Tooltip("Высота центра масс (чем ниже, тем устойчивее)")]
     public float ВысотаЦентраМасс = -0.6f;
 
-    // Приватные переменные (оставляем на английском для кода)
+    [Header("◉ ТИП ПРИВОДА")]
+    [Tooltip("Какие колёса ведущие")]
+    public ТипПривода типПривода = ТипПривода.ЗаднийПривод;
+
+    public enum ТипПривода
+    {
+        ЗаднийПривод,
+        ПереднийПривод,
+        ПолныйПривод
+    }
+
+    // Приватные переменные
     private Rigidbody rb;
     private WheelCollider[] frontWheels;
     private WheelCollider[] rearWheels;
     private float currentSteerAngle;
     private bool isHandbrakeActive;
     
-    // Переменные для плавного заднего хода
-    private bool isInReverseMode = false;
-    private float reverseTransitionTimer = 0f;
-    private const float REVERSE_TRANSITION_TIME = 0.3f;
-
     // Кэшированные настройки трения
     private WheelFrictionCurve defaultForwardFriction;
     private WheelFrictionCurve defaultSidewaysFriction;
@@ -128,13 +148,13 @@ public class CarController : MonoBehaviour
     {
         foreach (var wc in Колёса)
         {
-            // Настройка подвески
-            wc.suspensionDistance = 0.3f;
+            // Настройка подвески из инспектора
+            wc.suspensionDistance = ХодПодвески;
             wc.suspensionSpring = new JointSpring
             {
-                spring = 35000f,
-                damper = 4500f,
-                targetPosition = 0.5f
+                spring = ЖёсткостьПружины,
+                damper = СилаДемпфирования,
+                targetPosition = ЦелеваяПозицияПружины
             };
 
             // Настройка сцепления
@@ -146,31 +166,55 @@ public class CarController : MonoBehaviour
             sidewaysFriction.stiffness = БоковоеСцепление;
             wc.sidewaysFriction = sidewaysFriction;
         }
+        
+        // Коррекция высоты кузова
+        // AdjustCarHeight();  // ← ЗАКОММЕНТИРОВАНО
     }
-[Header("◉ ТИП ПРИВОДА")]
-[Tooltip("Какие колёса ведущие")]
-public ТипПривода типПривода = ТипПривода.ЗаднийПривод;
 
-public enum ТипПривода
-{
-    ЗаднийПривод,
-    ПереднийПривод,
-    ПолныйПривод
-}
-WheelCollider[] GetDriveWheels()
-{
-    switch (типПривода)
+    // // Коррекция высоты кузова относительно подвески
+    // // void AdjustCarHeight()
+    // // {
+    // //     // Проверяем, что массив существует и не пуст
+    // //     if (Колёса == null || Колёса.Length == 0) return;
+    // //     
+    // //     float avgWheelY = 0f;
+    // //     int validWheelCount = 0;
+    // //     
+    // //     foreach (var wc in Колёса)
+    // //     {
+    // //         // Пропускаем null-элементы
+    // //         if (wc == null) continue;
+    // //         
+    // //         avgWheelY += wc.transform.position.y;
+    // //         validWheelCount++;
+    // //     }
+    // //     
+    // //     // Если нет валидных колёс, выходим
+    // //     if (validWheelCount == 0) return;
+    // //     
+    // //     avgWheelY /= validWheelCount;
+    // //     
+    // //     // Смещаем центр масс
+    // //     Vector3 newCenterOfMass = rb.centerOfMass;
+    // //     newCenterOfMass.y = ВысотаЦентраМасс + ВысотаКузова;
+    // //     rb.centerOfMass = newCenterOfMass;
+    // // }
+
+    WheelCollider[] GetDriveWheels()
     {
-        case ТипПривода.ЗаднийПривод:
-            return rearWheels;
-        case ТипПривода.ПереднийПривод:
-            return frontWheels;
-        case ТипПривода.ПолныйПривод:
-            return Колёса;
-        default:
-            return rearWheels;
+        switch (типПривода)
+        {
+            case ТипПривода.ЗаднийПривод:
+                return rearWheels;
+            case ТипПривода.ПереднийПривод:
+                return frontWheels;
+            case ТипПривода.ПолныйПривод:
+                return Колёса;
+            default:
+                return rearWheels;
+        }
     }
-}
+
     void CacheDefaultFrictionSettings()
     {
         if (Колёса.Length > 0)
@@ -191,9 +235,6 @@ WheelCollider[] GetDriveWheels()
         float vertical = Input.GetAxis("Vertical");
         bool handbrake = Input.GetKey(KeyCode.Space);
 
-        // Обновление таймера перехода в задний ход
-        UpdateReverseTransition(vertical);
-
         // Обработка поворота
         HandleSteering(horizontal);
         
@@ -207,162 +248,108 @@ WheelCollider[] GetDriveWheels()
         rb.linearDamping = (Mathf.Abs(vertical) < 0.1f && !handbrake) ? ТорможениеНакатом : 0f;
     }
 
-    void UpdateReverseTransition(float verticalInput)
+    void HandleSteering(float horizontalInput)
     {
-        float currentSpeed = rb.linearVelocity.magnitude;
-        bool isMovingForward = Vector3.Dot(rb.linearVelocity, transform.forward) > 0;
-
-        // Определяем, хотим ли мы включить задний ход
-        bool wantsReverse = verticalInput < -0.1f;
-        bool canSwitchToReverse = currentSpeed < ПорогЗаднегоХода;
-
-        if (wantsReverse && canSwitchToReverse)
+        if (horizontalInput != 0)
         {
-            // Начинаем переход в режим заднего хода
-            reverseTransitionTimer += Time.deltaTime * ПлавностьПереключения;
+            // Динамический угол поворота в зависимости от скорости
+            float speedFactor = Mathf.Clamp01(rb.linearVelocity.magnitude * ВлияниеСкоростиНаПоворот);
+            float dynamicSteerAngle = МаксимальныйУголПоворота * (1f - speedFactor * 0.5f);
             
-            // Если машина движется вперёд, но медленно, сначала тормозим
-            if (isMovingForward && currentSpeed > 0.5f)
-            {
-                // Применяем тормоз во время перехода
-                foreach (var wheel in rearWheels)
-                {
-                    wheel.brakeTorque = СилаТормоза * Mathf.Clamp01(reverseTransitionTimer / REVERSE_TRANSITION_TIME);
-                    wheel.motorTorque = 0f;
-                }
-                
-                // Ждём, пока машина почти остановится
-                if (currentSpeed < 0.8f && reverseTransitionTimer >= REVERSE_TRANSITION_TIME * 0.5f)
-                {
-                    isInReverseMode = true;
-                }
-            }
-            else
-            {
-                // Машина почти остановилась или стоит, включаем задний ход
-                if (reverseTransitionTimer >= REVERSE_TRANSITION_TIME)
-                {
-                    isInReverseMode = true;
-                }
-            }
+            currentSteerAngle = horizontalInput * dynamicSteerAngle;
         }
         else
         {
-            // Сбрасываем таймер и выходим из режима заднего хода
-            reverseTransitionTimer = Mathf.Max(0f, reverseTransitionTimer - Time.deltaTime * ПлавностьПереключения * 2f);
-            
-            // Если нажат газ вперёд или скорость стала большой, отключаем задний ход
-            if (verticalInput > 0.1f || currentSpeed > ПорогЗаднегоХода * 1.5f)
-            {
-                isInReverseMode = false;
-                reverseTransitionTimer = 0f;
-            }
+            // Плавный возврат колёс в исходное положение
+            currentSteerAngle = Mathf.Lerp(currentSteerAngle, 0f, Time.deltaTime * СкоростьВозвратаРуля);
+        }
+
+        // Применение поворота к передним колёсам
+        foreach (var wheel in frontWheels)
+        {
+            wheel.steerAngle = currentSteerAngle;
         }
     }
 
-    void HandleSteering(float horizontalInput)
-{
-    if (horizontalInput != 0)
+    void HandleMotorAndBrake(float verticalInput, bool handbrake)
     {
-        // Динамический угол поворота в зависимости от скорости
-        float speedFactor = Mathf.Clamp01(rb.linearVelocity.magnitude * ВлияниеСкоростиНаПоворот);
-        float dynamicSteerAngle = МаксимальныйУголПоворота * (1f - speedFactor * 0.5f);
+        float currentSpeed = rb.linearVelocity.magnitude;
+        float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
+        bool isMovingForward = forwardSpeed > 0.5f;
+        bool isMovingBackward = forwardSpeed < -0.5f;
         
-        // УБИРАЕМ ИНВЕРТИРОВАНИЕ ПРИ ЗАДНЕМ ХОДЕ
-        // Просто всегда одинаковое управление
-        currentSteerAngle = horizontalInput * dynamicSteerAngle;
-    }
-    else
-    {
-        // Плавный возврат колёс в исходное положение
-        currentSteerAngle = Mathf.Lerp(currentSteerAngle, 0f, Time.deltaTime * СкоростьВозвратаРуля);
-    }
-
-    // Применение поворота к передним колёсам
-    foreach (var wheel in frontWheels)
-    {
-        wheel.steerAngle = currentSteerAngle;
-    }
-}
-
-   void HandleMotorAndBrake(float verticalInput, bool handbrake)
-{
-    float currentSpeed = rb.linearVelocity.magnitude;
-    float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
-    bool isMovingForward = forwardSpeed > 0.5f;
-    bool isMovingBackward = forwardSpeed < -0.5f;
-    
-    // Определяем ведущие колёса ДЛЯ МОТОРА
-    WheelCollider[] driveWheels = GetDriveWheels();
-    
-    // === 1. СБРОС ВСЕХ КРУТЯЩИХ МОМЕНТОВ ===
-    foreach (var wheel in Колёса)
-    {
-        wheel.motorTorque = 0f;
-        wheel.brakeTorque = 0f;
-    }
-    
-    // === 2. ОБРАБОТКА ТОРМОЗА (кнопка S) ===
-    if (verticalInput < -0.1f && !handbrake)
-    {
-        // Если движемся вперёд — ТОРМОЗИМ
-        if (isMovingForward && currentSpeed > 2f)
-        {
-            // Тормоз на ВСЕХ колёсах
-            foreach (var wheel in Колёса)
-            {
-                wheel.brakeTorque = СилаТормоза;
-            }
-            return; // Выходим — не применяем мотор
-        }
-        // Если почти остановились — ЕДЕМ НАЗАД
-        else if (currentSpeed < 2f || isMovingBackward)
-        {
-            float reverseInput = Mathf.Abs(verticalInput);
-            float reversePower = Mathf.Pow(reverseInput, КриваяРазгона);
-            
-            // Моторный крутящий момент ТОЛЬКО на ведущих колёсах
-            foreach (var wheel in driveWheels)
-            {
-                wheel.motorTorque = -reversePower * МощностьЗаднегоХода;
-            }
-            
-            // Ограничение скорости назад
-            if (isMovingBackward && Mathf.Abs(forwardSpeed) > МаксСкоростьНазад)
-            {
-                foreach (var wheel in Колёса)
-                {
-                    wheel.brakeTorque = СилаТормоза * 0.5f;
-                }
-            }
-            return;
-        }
-    }
-    
-    // === 3. ДВИЖЕНИЕ ВПЕРЁД ===
-    if (verticalInput > 0.1f && !handbrake)
-    {
-        if (currentSpeed < МаксимальнаяСкорость || forwardSpeed < 0)
-        {
-            float accelerationPower = Mathf.Pow(verticalInput, КриваяРазгона);
-            foreach (var wheel in driveWheels)
-            {
-                wheel.motorTorque = accelerationPower * МощностьДвигателя;
-            }
-        }
-    }
-    
-    // === 4. ТОРМОЖЕНИЕ ПРИ ОТПУСКАНИИ КЛАВИШ ===
-    if (Mathf.Abs(verticalInput) < 0.1f && !handbrake)
-    {
-        // Лёгкое торможение для остановки движения
-        float brakeForce = isMovingBackward ? СилаТормоза * 0.7f : СилаТормоза * 0.3f;
+        // Определяем ведущие колёса ДЛЯ МОТОРА
+        WheelCollider[] driveWheels = GetDriveWheels();
+        
+        // === 1. СБРОС ВСЕХ КРУТЯЩИХ МОМЕНТОВ ===
         foreach (var wheel in Колёса)
         {
-            wheel.brakeTorque = brakeForce;
+            wheel.motorTorque = 0f;
+            wheel.brakeTorque = 0f;
+        }
+        
+        // === 2. ОБРАБОТКА ТОРМОЗА (кнопка S) ===
+        if (verticalInput < -0.1f && !handbrake)
+        {
+            // Если движемся вперёд — ТОРМОЗИМ
+            if (isMovingForward && currentSpeed > 2f)
+            {
+                // Тормоз на ВСЕХ колёсах
+                foreach (var wheel in Колёса)
+                {
+                    wheel.brakeTorque = СилаТормоза;
+                }
+                return; // Выходим — не применяем мотор
+            }
+            // Если почти остановились — ЕДЕМ НАЗАД
+            else if (currentSpeed < 2f || isMovingBackward)
+            {
+                float reverseInput = Mathf.Abs(verticalInput);
+                float reversePower = Mathf.Pow(reverseInput, КриваяРазгона);
+                
+                // Моторный крутящий момент ТОЛЬКО на ведущих колёсах
+                foreach (var wheel in driveWheels)
+                {
+                    wheel.motorTorque = -reversePower * МощностьЗаднегоХода;
+                }
+                
+                // Ограничение скорости назад
+                if (isMovingBackward && Mathf.Abs(forwardSpeed) > МаксСкоростьНазад)
+                {
+                    foreach (var wheel in Колёса)
+                    {
+                        wheel.brakeTorque = СилаТормоза * 0.5f;
+                    }
+                }
+                return;
+            }
+        }
+        
+        // === 3. ДВИЖЕНИЕ ВПЕРЁД ===
+        if (verticalInput > 0.1f && !handbrake)
+        {
+            if (currentSpeed < МаксимальнаяСкорость || forwardSpeed < 0)
+            {
+                float accelerationPower = Mathf.Pow(verticalInput, КриваяРазгона);
+                foreach (var wheel in driveWheels)
+                {
+                    wheel.motorTorque = accelerationPower * МощностьДвигателя;
+                }
+            }
+        }
+        
+        // === 4. ТОРМОЖЕНИЕ ПРИ ОТПУСКАНИИ КЛАВИШ ===
+        if (Mathf.Abs(verticalInput) < 0.1f && !handbrake)
+        {
+            // Лёгкое торможение для остановки движения
+            float brakeForce = isMovingBackward ? СилаТормоза * 0.7f : СилаТормоза * 0.3f;
+            foreach (var wheel in Колёса)
+            {
+                wheel.brakeTorque = brakeForce;
+            }
         }
     }
-}
+
     void HandleHandbrake(bool handbrake)
     {
         if (handbrake != isHandbrakeActive)
@@ -376,9 +363,11 @@ WheelCollider[] GetDriveWheels()
                 {
                     wheel.sidewaysFriction = handbrakeSidewaysFriction;
                 }
-                // Сбрасываем режим заднего хода
-                isInReverseMode = false;
-                reverseTransitionTimer = 0f;
+                // Применяем силу ручного тормоза на задних колёсах
+                foreach (var wheel in rearWheels)
+                {
+                    wheel.brakeTorque = СилаРучногоТормоза;
+                }
             }
             else
             {
@@ -386,6 +375,11 @@ WheelCollider[] GetDriveWheels()
                 foreach (var wheel in rearWheels)
                 {
                     wheel.sidewaysFriction = defaultSidewaysFriction;
+                }
+                // Сбрасываем тормоз
+                foreach (var wheel in rearWheels)
+                {
+                    wheel.brakeTorque = 0f;
                 }
             }
         }
@@ -420,16 +414,20 @@ WheelCollider[] GetDriveWheels()
         }
     }
 
-    // Вспомогательный метод для отладки
-    void OnGUI()
+    // Визуализация колёс (опционально, для отладки)
+    void OnDrawGizmosSelected()
     {
-        if (Application.isEditor)
+        if (Колёса == null || Колёса.Length == 0) return;
+        
+        Gizmos.color = Color.yellow;
+        foreach (var wc in Колёса)
         {
-            GUI.Label(new Rect(10, 10, 300, 100), 
-                $"Режим заднего хода: {isInReverseMode}\n" +
-                $"Переход: {reverseTransitionTimer:F2}\n" +
-                $"Скорость: {rb.linearVelocity.magnitude:F1}\n" +
-                $"Скорость вперёд: {Vector3.Dot(rb.linearVelocity, transform.forward):F1}");
+            // Показываем радиус колеса
+            Gizmos.DrawWireSphere(wc.transform.position, wc.radius);
+            
+            // Показываем ход подвески
+            Vector3 suspensionStart = wc.transform.position + Vector3.up * wc.suspensionDistance;
+            Gizmos.DrawLine(suspensionStart, wc.transform.position);
         }
     }
 
