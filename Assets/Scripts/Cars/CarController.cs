@@ -289,60 +289,77 @@ WheelCollider[] GetDriveWheels()
 {
     float currentSpeed = rb.linearVelocity.magnitude;
     float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
+    bool isMovingForward = forwardSpeed > 0.5f;
+    bool isMovingBackward = forwardSpeed < -0.5f;
     
-    // Коэффициент плавности перехода
-    float reverseBlend = Mathf.Clamp01(reverseTransitionTimer / REVERSE_TRANSITION_TIME);
-
-    // Определяем ведущие колёса
-    WheelCollider[] ведущиеКолеса = GetDriveWheels();
-
-    // Обработка для ведущих колёс
-    foreach (var wheel in ведущиеКолеса)
+    // Определяем ведущие колёса ДЛЯ МОТОРА
+    WheelCollider[] driveWheels = GetDriveWheels();
+    
+    // === 1. СБРОС ВСЕХ КРУТЯЩИХ МОМЕНТОВ ===
+    foreach (var wheel in Колёса)
     {
-        if (!handbrake)
+        wheel.motorTorque = 0f;
+        wheel.brakeTorque = 0f;
+    }
+    
+    // === 2. ОБРАБОТКА ТОРМОЗА (кнопка S) ===
+    if (verticalInput < -0.1f && !handbrake)
+    {
+        // Если движемся вперёд — ТОРМОЗИМ
+        if (isMovingForward && currentSpeed > 2f)
         {
-            if (isInReverseMode && verticalInput < -0.1f)
+            // Тормоз на ВСЕХ колёсах
+            foreach (var wheel in Колёса)
             {
-                // ПЛАВНЫЙ ЗАДНИЙ ХОД с переходом
-                wheel.brakeTorque = 0f;
-                
-                // Плавно увеличиваем мощность заднего хода
-                float reverseInput = Mathf.Abs(verticalInput);
-                float reversePower = Mathf.Pow(reverseInput, КриваяРазгона);
-                
-                // ДОБАВЛЕНО: множитель для усиления
-                float множительЗаднегоХода = 1.5f; // Увеличиваем силу заднего хода на 50%
-                wheel.motorTorque = -reversePower * МощностьЗаднегоХода * множительЗаднегоХода * reverseBlend;
-                
-                // Ограничение скорости заднего хода
-                if (Mathf.Abs(forwardSpeed) > МаксСкоростьНазад && forwardSpeed < 0)
+                wheel.brakeTorque = СилаТормоза;
+            }
+            return; // Выходим — не применяем мотор
+        }
+        // Если почти остановились — ЕДЕМ НАЗАД
+        else if (currentSpeed < 2f || isMovingBackward)
+        {
+            float reverseInput = Mathf.Abs(verticalInput);
+            float reversePower = Mathf.Pow(reverseInput, КриваяРазгона);
+            
+            // Моторный крутящий момент ТОЛЬКО на ведущих колёсах
+            foreach (var wheel in driveWheels)
+            {
+                wheel.motorTorque = -reversePower * МощностьЗаднегоХода;
+            }
+            
+            // Ограничение скорости назад
+            if (isMovingBackward && Mathf.Abs(forwardSpeed) > МаксСкоростьНазад)
+            {
+                foreach (var wheel in Колёса)
                 {
-                    wheel.motorTorque = 0f;
-                    wheel.brakeTorque = СилаТормоза * 0.3f;
+                    wheel.brakeTorque = СилаТормоза * 0.5f;
                 }
             }
-            else if (verticalInput > 0.1f)
+            return;
+        }
+    }
+    
+    // === 3. ДВИЖЕНИЕ ВПЕРЁД ===
+    if (verticalInput > 0.1f && !handbrake)
+    {
+        if (currentSpeed < МаксимальнаяСкорость || forwardSpeed < 0)
+        {
+            float accelerationPower = Mathf.Pow(verticalInput, КриваяРазгона);
+            foreach (var wheel in driveWheels)
             {
-                // ДВИЖЕНИЕ ВПЕРЁД
-                wheel.brakeTorque = 0f;
-                
-                // Плавный переход из заднего хода
-                float forwardBlend = isInReverseMode ? (1f - reverseBlend) : 1f;
-                
-                // ДОБАВЛЕНО: усиление переднего хода
-                float множительПереднегоХода = 1.2f;
-                
-                // Ограничение скорости
-                if (currentSpeed < МаксимальнаяСкорость || forwardSpeed < 0)
-                {
-                    float accelerationPower = Mathf.Pow(verticalInput, КриваяРазгона) * forwardBlend;
-                    wheel.motorTorque = accelerationPower * МощностьДвигателя * множительПереднегоХода;
-                }
-                else if (forwardSpeed > 0)
-                {
-                    wheel.motorTorque = 0f;
-                }
+                wheel.motorTorque = accelerationPower * МощностьДвигателя;
             }
+        }
+    }
+    
+    // === 4. ТОРМОЖЕНИЕ ПРИ ОТПУСКАНИИ КЛАВИШ ===
+    if (Mathf.Abs(verticalInput) < 0.1f && !handbrake)
+    {
+        // Лёгкое торможение для остановки движения
+        float brakeForce = isMovingBackward ? СилаТормоза * 0.7f : СилаТормоза * 0.3f;
+        foreach (var wheel in Колёса)
+        {
+            wheel.brakeTorque = brakeForce;
         }
     }
 }
